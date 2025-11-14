@@ -1,0 +1,38 @@
+# Build directories
+build/
+cmake-build-*/
+
+# Compiled binaries
+*.out
+*.exe
+example
+stevensMathLib_tests
+stevensMathLib_benchmarks
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Object files
+*.o
+*.obj
+*.a
+*.lib
+
+# Testing and coverage
+*.gcov
+*.gcda
+*.gcno
