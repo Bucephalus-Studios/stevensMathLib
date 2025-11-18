@@ -66,6 +66,64 @@ Compile with:
 g++ -std=c++17 your_program.cpp -o your_program
 ```
 
+### Example Programs
+
+Here are some example usages of the library:
+
+**Rounding Functions:**
+```cpp
+float pi = 3.14159f;
+std::cout << roundToNearest10th(pi) << "\n";  // 3.1
+std::cout << round(pi, 2) << "\n";  // 3.14
+std::cout << round(pi, 4) << "\n";  // 3.1416
+std::cout << isWholeNumber(10.0f) << "\n";  // true
+```
+
+**Random Number Generation:**
+```cpp
+// Random integers in range [0, 100)
+int randInt = randomInt(0, 100);
+
+// Random floats in range [0.0, 1.0]
+float randFloat = randomFloat(0.0f, 1.0f);
+
+// Random integers excluding a blacklist
+std::vector<int> blacklist = {12, 15, 18};
+int randExcluded = randomIntNotInBlacklist(blacklist, 10, 20);
+
+// Access the random engine directly
+auto& engine = getRandomEngine();
+```
+
+**Type Conversion:**
+```cpp
+float f1 = 3.7f;
+float f2 = -5.2f;
+double d1 = 42.9;
+
+int i1 = floatToInt(f1);  // 3
+int i2 = floatToInt(f2);  // -5
+int i3 = floatToInt(d1);  // 42
+```
+
+**Range Checking:**
+```cpp
+int value = 5;
+
+// Inclusive bounds: [0, 10]
+bool inRangeInc = in_range(value, 0, 10, BoundType::Inclusive);  // true
+
+// Exclusive bounds: (0, 10)
+bool inRangeExc = in_range(value, 0, 10, BoundType::Exclusive);  // true
+
+// Boundary checks
+bool boundaryInc = in_range(10, 0, 10, BoundType::Inclusive);  // true
+bool boundaryExc = in_range(10, 0, 10, BoundType::Exclusive);  // false
+
+// Works with floats too
+bool floatInRange = in_range(3.14f, 0.0f, 5.0f, BoundType::Inclusive);  // true
+```
+
 ## Building with CMake
 
 ### Clone the Repository
@@ -75,48 +133,41 @@ git clone https://github.com/Bucephalus-Studios/stevensMathLib.git
 cd stevensMathLib
 ```
 
-### Build Everything (Library, Tests, and Benchmarks)
+### Building Tests
 
 ```bash
+cd tests
 mkdir build
 cd build
 cmake ..
 cmake --build .
 ```
 
-### Build Options
-
-You can disable tests or benchmarks if needed:
-
-```bash
-cmake -DBUILD_TESTS=OFF -DBUILD_BENCHMARKS=OFF ..
-```
-
 ### Running Tests
 
 ```bash
-# From build directory
-./tests/stevensMathLib_tests
+# From tests/build directory
+./stevensMathLib_tests
 
 # Or using CTest
 ctest --output-on-failure
 ```
 
+### Building Benchmarks
+
+```bash
+cd benchmarks
+mkdir build
+cd build
+cmake ..
+cmake --build .
+```
+
 ### Running Benchmarks
 
 ```bash
-# From build directory
-./benchmarks/stevensMathLib_benchmarks
-```
-
-### Running the Example
-
-```bash
-# Compile the example
-g++ -std=c++17 example.cpp -o example
-
-# Run it
-./example
+# From benchmarks/build directory
+./stevensMathLib_benchmarks
 ```
 
 ## API Reference
