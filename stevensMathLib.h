@@ -12,6 +12,7 @@
 #define STEVENSMATHLIB_H
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
@@ -48,16 +49,22 @@ namespace stevensMathLib
     /**
      * @brief Returns a thread-local random number engine
      *
-     * @return A reference to a mt19937 random engine, seeded with random_device
+     * @return A reference to a mt19937 random engine, seeded with high-resolution clock
      *
      * This provides a modern, high-quality random number generator using
      * the Mersenne Twister algorithm. The engine is thread-local to avoid
      * race conditions in multithreaded code.
+     *
+     * Uses high-resolution clock for seeding to ensure each thread gets a unique
+     * seed while avoiding potential entropy exhaustion from repeated random_device usage.
      */
     inline std::mt19937& getRandomEngine()
     {
-        thread_local std::random_device randomDevice;
-        thread_local std::mt19937 engine(randomDevice());
+        thread_local std::mt19937 engine(
+            static_cast<unsigned int>(
+                std::chrono::high_resolution_clock::now().time_since_epoch().count()
+            )
+        );
         return engine;
     }
 
