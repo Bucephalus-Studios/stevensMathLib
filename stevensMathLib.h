@@ -8,8 +8,7 @@
  * Licensed under the MIT License
  */
 
-#ifndef STEVENSMATHLIB_H
-#define STEVENSMATHLIB_H
+#pragma once
 
 #include <algorithm>
 #include <chrono>
@@ -55,7 +54,7 @@ namespace stevensMathLib
      * the Mersenne Twister algorithm. The engine is thread-local to avoid
      * race conditions in multithreaded code.
      *
-     * Uses high-resolution clock for seeding to ensure each thread gets a unique
+     * Uses high-resolution clock for seeding to ensure each std::thread gets a unique
      * seed while avoiding potential entropy exhaustion from repeated random_device usage.
      */
     inline std::mt19937& getRandomEngine()
@@ -66,6 +65,14 @@ namespace stevensMathLib
             )
         );
         return engine;
+    }
+
+    /**
+     * @brief Re-seeds the random engine for reproducible generation (e.g. world seeds)
+     */
+    inline void setSeed(unsigned int seed)
+    {
+        getRandomEngine().seed(seed);
     }
 
     /**
@@ -289,4 +296,3 @@ namespace stevensMathLib
 
 } // namespace stevensMathLib
 
-#endif // STEVENSMATHLIB_H
