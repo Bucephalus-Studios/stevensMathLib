@@ -196,6 +196,135 @@ TEST_F(RandomTest, RandomIntNotInBlacklist_ThrowsWhenBlacklistTooLarge)
     );
 }
 
+// Tests for randomBelow
+TEST_F(RandomTest, RandomBelow_WithinRange)
+{
+    for (int i = 0; i < sampleSize; ++i) {
+        EXPECT_LT(randomBelow(7), 7u);
+    }
+}
+
+TEST_F(RandomTest, RandomBelow_LargeBoundWithinRange)
+{
+    const uint64_t bound = 1000000000000ull; // above 2^32, takes the two-draw path
+    for (int i = 0; i < sampleSize; ++i) {
+        EXPECT_LT(randomBelow(bound), bound);
+    }
+}
+
+TEST_F(RandomTest, RandomBelow_EdgeCase_ZeroAndOne)
+{
+    EXPECT_EQ(randomBelow(0), 0u);
+    EXPECT_EQ(randomBelow(1), 0u);
+}
+
+TEST_F(RandomTest, RandomBelow_RoughlyUniform)
+{
+    std::vector<int> counts(3, 0);
+    for (int i = 0; i < 30000; ++i) {
+        counts[randomBelow(3)]++;
+    }
+    for (int count : counts) {
+        EXPECT_GT(count, 9000);
+        EXPECT_LT(count, 11000);
+    }
+}
+
+// Tests for randomDouble
+TEST_F(RandomTest, RandomDouble_WithinCustomRange)
+{
+    for (int i = 0; i < sampleSize; ++i) {
+        double value = randomDouble(10.0, 20.0);
+        EXPECT_GE(value, 10.0);
+        EXPECT_LE(value, 20.0);
+    }
+}
+
+// Tests for shuffle
+TEST_F(RandomTest, Shuffle_IsPermutation)
+{
+    std::vector<int> values = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+    shuffle(values.begin(), values.end());
+    std::set<int> unique(values.begin(), values.end());
+    EXPECT_EQ(values.size(), 10u);
+    EXPECT_EQ(unique.size(), 10u);
+}
+
+TEST_F(RandomTest, Shuffle_EmptyAndSingle)
+{
+    std::vector<int> empty;
+    shuffle(empty.begin(), empty.end());
+    EXPECT_TRUE(empty.empty());
+
+    std::vector<int> single = {5};
+    shuffle(single.begin(), single.end());
+    EXPECT_EQ(single[0], 5);
+}
+
+/*
+ * Cross-platform reproducibility
+ *
+ * These expected values pin the exact outputs for seed 42. They must pass unchanged on every
+ * platform (GCC/libstdc++, MSVC, Clang/libc++); a failure on one platform means seeded results
+ * (e.g. CultGame world seeds) differ there. randomDouble()'s first value also matches NumPy's
+ * np.random.seed(42); np.random.random(), which uses the same MT19937 53-bit construction.
+ */
+TEST_F(RandomTest, Reproducible_RandomBelow)
+{
+    setSeed(42);
+    const std::vector<uint64_t> expected = {37, 79, 95, 18, 73, 77, 59, 59};
+    for (uint64_t value : expected) {
+        EXPECT_EQ(randomBelow(100), value);
+    }
+}
+
+TEST_F(RandomTest, Reproducible_RandomBelowLargeBound)
+{
+    setSeed(42);
+    const std::vector<uint64_t> expected = {637428952499ull, 593393853710ull, 847239337031ull, 886329703444ull};
+    for (uint64_t value : expected) {
+        EXPECT_EQ(randomBelow(1000000000000ull), value);
+    }
+}
+
+TEST_F(RandomTest, Reproducible_RandomInt)
+{
+    setSeed(42);
+    const std::vector<int> expected = {-13, 29, 45, -32, 23, 27, 9, 9};
+    for (int value : expected) {
+        EXPECT_EQ(randomInt(-50, 50), value);
+    }
+
+    setSeed(42);
+    EXPECT_EQ(randomInt(std::numeric_limits<int>::min(), std::numeric_limits<int>::max()), -538846107);
+}
+
+TEST_F(RandomTest, Reproducible_RandomFloat)
+{
+    setSeed(42);
+    const std::vector<float> expected = {0.374540091f, 0.796542943f, 0.95071429f, 0.183434784f};
+    for (float value : expected) {
+        EXPECT_EQ(randomFloat(), value);
+    }
+}
+
+TEST_F(RandomTest, Reproducible_RandomDouble)
+{
+    setSeed(42);
+    const std::vector<double> expected = {0.37454011884736249, 0.95071430640991617, 0.73199394181140509, 0.5986584841970366};
+    for (double value : expected) {
+        EXPECT_EQ(randomDouble(), value);
+    }
+}
+
+TEST_F(RandomTest, Reproducible_Shuffle)
+{
+    setSeed(42);
+    std::vector<int> values = {0, 1, 2, 3, 4, 5, 6, 7};
+    shuffle(values.begin(), values.end());
+    EXPECT_EQ(values, (std::vector<int>{4, 1, 3, 7, 0, 6, 5, 2}));
+}
+
 // Tests for getRandomEngine
 TEST_F(RandomTest, GetRandomEngine_ProducesNumbers)
 {

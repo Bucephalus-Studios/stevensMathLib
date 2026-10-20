@@ -13,12 +13,15 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <ctime>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <random>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace stevensMathLib
@@ -133,31 +136,118 @@ namespace stevensMathLib
         return std::round(value * scaleFactor) / scaleFactor;
     }
 
-    /**
-     * @brief Generates a random floating point number in a range
+    /*
+     * Portable random ranges
      *
-     * @param lowerBound Inclusive lower bound (minimum value)
-     * @param upperBound Inclusive upper bound (maximum value)
-     * @return A random float between lowerBound and upperBound
+     * std::mt19937 is fully specified by the C++ standard, so a given seed yields the same raw
+     * 32-bit outputs everywhere. std::uniform_int_distribution, std::uniform_real_distribution
+     * and std::shuffle are NOT: libstdc++ (GCC/Linux), the MSVC STL (Windows) and libc++
+     * (Clang/macOS) each map raw outputs to a range differently, and may consume a different
+     * number of them per call. So the same seed produced different results per platform.
      *
-     * Uses modern C++ random number generation for better distribution
-     * quality compared to the legacy rand() function.
+     * The functions below build ranges directly from the engine's raw output with fully
+     * specified algorithms, so a seed reproduces identically on every platform. Use them
+     * instead of the std:: distributions whenever results must be reproducible from a seed.
      */
-    inline float randomFloat(float lowerBound = 0.0f, float upperBound = 1.0f)
+
+    /**
+     * @brief Draws one raw 32-bit value from the engine
+     *
+     * mt19937's result_type is uint_fast32_t, which is 64 bits wide on some platforms, but its
+     * values always fit in 32 bits.
+     */
+    inline uint32_t randomBits32()
     {
-        std::uniform_real_distribution<float> distribution(lowerBound, upperBound);
-        return distribution(getRandomEngine());
+        return static_cast<uint32_t>(getRandomEngine()());
     }
 
     /**
-     * @brief Generates a random integer in a range
+     * @brief Generates a uniform random integer in [0, bound), identically on every platform
+     *
+     * @param bound Exclusive upper bound
+     * @return A random integer in [0, bound), or 0 if bound is 0 or 1
+     *
+     * Bounds that fit in 32 bits use Lemire's multiply-and-reject method (unbiased, usually
+     * one draw). Larger bounds combine two draws into 64 bits and use modulo rejection.
+     */
+    inline uint64_t randomBelow(uint64_t bound)
+    {
+        if (bound <= 1) {
+            return 0;
+        }
+
+        if (bound <= std::numeric_limits<uint32_t>::max()) {
+            const uint32_t bound32 = static_cast<uint32_t>(bound);
+            uint64_t product = static_cast<uint64_t>(randomBits32()) * bound32;
+            uint32_t low = static_cast<uint32_t>(product);
+            if (low < bound32) {
+                // Values whose low half falls below (2^32 mod bound) would bias the result; redraw them
+                const uint32_t threshold = static_cast<uint32_t>(0u - bound32) % bound32;
+                while (low < threshold) {
+                    product = static_cast<uint64_t>(randomBits32()) * bound32;
+                    low = static_cast<uint32_t>(product);
+                }
+            }
+            return product >> 32;
+        }
+
+        // Accept only draws at or above (2^64 mod bound), so every result is equally likely
+        const uint64_t threshold = (0ull - bound) % bound;
+        while (true) {
+            // Two separate statements: the evaluation order of two calls in one expression is
+            // unspecified, so combining them inline could differ between compilers
+            const uint64_t high = randomBits32();
+            const uint64_t low = randomBits32();
+            const uint64_t value = (high << 32) | low;
+            if (value >= threshold) {
+                return value % bound;
+            }
+        }
+    }
+
+    /**
+     * @brief Generates a random floating point number in a range, identically on every platform
+     *
+     * @param lowerBound Inclusive lower bound (minimum value)
+     * @param upperBound Upper bound (maximum value); exclusive except where rounding lands on it
+     * @return A random float between lowerBound and upperBound
+     *
+     * Takes the top 24 bits of one draw as a fraction in [0, 1), then scales it with std::fma.
+     * fma rounds once by definition, so the result can't vary with whether the compiler
+     * fuses the multiply and add.
+     */
+    inline float randomFloat(float lowerBound = 0.0f, float upperBound = 1.0f)
+    {
+        const float fraction = static_cast<float>(randomBits32() >> 8) * (1.0f / 16777216.0f);
+        return std::fma(fraction, upperBound - lowerBound, lowerBound);
+    }
+
+    /**
+     * @brief Generates a random double in a range, identically on every platform
+     *
+     * @param lowerBound Inclusive lower bound (minimum value)
+     * @param upperBound Upper bound (maximum value); exclusive except where rounding lands on it
+     * @return A random double between lowerBound and upperBound
+     *
+     * Combines two draws into a 53-bit fraction in [0, 1), then scales it with std::fma
+     * (see randomFloat()).
+     */
+    inline double randomDouble(double lowerBound = 0.0, double upperBound = 1.0)
+    {
+        const uint64_t high = randomBits32() >> 5; // 27 bits
+        const uint64_t low = randomBits32() >> 6;  // 26 bits
+        const double fraction = static_cast<double>((high << 26) | low) * (1.0 / 9007199254740992.0);
+        return std::fma(fraction, upperBound - lowerBound, lowerBound);
+    }
+
+    /**
+     * @brief Generates a random integer in a range, identically on every platform
      *
      * @param lowerBound Inclusive lower bound (minimum value)
      * @param upperBound Exclusive upper bound (one past maximum value)
      * @return A random integer in [lowerBound, upperBound)
      *
      * If upperBound <= lowerBound, returns lowerBound.
-     * Uses modern C++ random number generation.
      */
     inline int randomInt(int lowerBound = 0, int upperBound = 100)
     {
@@ -165,8 +255,28 @@ namespace stevensMathLib
             return lowerBound;
         }
 
-        std::uniform_int_distribution<int> distribution(lowerBound, upperBound - 1);
-        return distribution(getRandomEngine());
+        const uint64_t range = static_cast<uint64_t>(static_cast<int64_t>(upperBound) - lowerBound);
+        return static_cast<int>(static_cast<int64_t>(lowerBound) + static_cast<int64_t>(randomBelow(range)));
+    }
+
+    /**
+     * @brief Shuffles a range into a random order, identically on every platform
+     *
+     * @param first Iterator to the first element
+     * @param last Iterator one past the last element
+     *
+     * Fisher-Yates shuffle drawing from randomBelow(). Use instead of std::shuffle, whose
+     * algorithm is implementation-defined.
+     */
+    template<typename RandomIt>
+    void shuffle(RandomIt first, RandomIt last)
+    {
+        const auto count = std::distance(first, last);
+        for (auto i = count - 1; i > 0; --i) {
+            const auto j = static_cast<decltype(i)>(randomBelow(static_cast<uint64_t>(i) + 1));
+            using std::swap;
+            swap(first[i], first[j]);
+        }
     }
 
     /**
