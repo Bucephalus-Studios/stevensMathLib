@@ -19,6 +19,7 @@
 #include <iostream>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <random>
 #include <stdexcept>
 #include <utility>
@@ -59,15 +60,24 @@ namespace stevensMathLib
      *
      * Uses high-resolution clock for seeding to ensure each std::thread gets a unique
      * seed while avoiding potential entropy exhaustion from repeated random_device usage.
+     *
+     * Each thread's engine lives on the heap, and only a pointer to it is thread_local. GCC 16.1
+     * MinGW at -O3 with LTO miscompiled a `thread_local std::mt19937` constructed in place: most of
+     * a new thread's seeded state was written to the wrong address, leaving that thread an all-zero
+     * engine that only returns 0 (and hangs randomBelow()). Keeping the 2.5KB engine out of TLS
+     * avoids that, and the pointer needs no dynamic initialization.
      */
     inline std::mt19937& getRandomEngine()
     {
-        thread_local std::mt19937 engine(
-            static_cast<unsigned int>(
-                std::chrono::high_resolution_clock::now().time_since_epoch().count()
-            )
-        );
-        return engine;
+        thread_local std::unique_ptr<std::mt19937> engine;
+        if (!engine) {
+            engine = std::make_unique<std::mt19937>(
+                static_cast<unsigned int>(
+                    std::chrono::high_resolution_clock::now().time_since_epoch().count()
+                )
+            );
+        }
+        return *engine;
     }
 
     /**

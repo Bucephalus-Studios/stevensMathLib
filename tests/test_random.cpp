@@ -6,7 +6,11 @@
 
 #include "../stevensMathLib.h"
 #include <gtest/gtest.h>
+#include <cstdint>
+#include <future>
 #include <set>
+#include <sstream>
+#include <thread>
 #include <vector>
 
 using namespace stevensMathLib;
@@ -334,4 +338,144 @@ TEST_F(RandomTest, GetRandomEngine_ProducesNumbers)
 
     // Just verify it produces values (they should be different most of the time)
     EXPECT_TRUE(value1 != value2 || value1 == value2); // Always true, just exercises the function
+}
+
+/*
+ * Per-thread engines
+ *
+ * Every thread gets its own engine, seeded on first use. These tests run on fresh std::threads
+ * because a thread's first call to getRandomEngine() is where its engine gets built, and the
+ * test runner's main thread has long since built (and drawn from) its own.
+ *
+ * Regression: GCC 16.1 MinGW at -O3 with LTO miscompiled the old function-local
+ * `thread_local std::mt19937`, writing most of a new thread's seeded state to the wrong
+ * address. The thread was left with an all-zero engine that only ever returns 0, which hung
+ * randomBelow()'s rejection loop forever. Build the tests in Release with LTO to cover this.
+ */
+namespace
+{
+    // An mt19937's state words, read through its standard text serialization
+    std::vector<uint32_t> readEngineState(const std::mt19937& engine)
+    {
+        std::stringstream stream;
+        stream << engine;
+        std::vector<uint32_t> state(std::mt19937::state_size);
+        for (uint32_t& word : state) {
+            stream >> word;
+        }
+        return state;
+    }
+
+    // True if the state is exactly what seeding an mt19937 produces: every word derived from the one before
+    bool isFreshlySeededState(const std::vector<uint32_t>& state)
+    {
+        for (size_t i = 1; i < state.size(); ++i) {
+            const uint32_t expected = static_cast<uint32_t>(1812433253u * (state[i - 1] ^ (state[i - 1] >> 30)) + i);
+            if (state[i] != expected) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    template<typename F>
+    auto runOnNewThread(F function)
+    {
+        auto task = std::async(std::launch::async, function);
+        return task.get();
+    }
+}
+
+TEST_F(RandomTest, GetRandomEngine_NewThreadEngineIsFullySeeded)
+{
+    const std::vector<uint32_t> state = runOnNewThread([] {
+        return readEngineState(getRandomEngine());
+    });
+    EXPECT_TRUE(isFreshlySeededState(state));
+}
+
+TEST_F(RandomTest, GetRandomEngine_NewThreadEngineProducesVariety)
+{
+    // Checked on the raw engine first: a broken engine would hang randomBelow() instead of failing
+    const std::set<uint32_t> uniqueValues = runOnNewThread([] {
+        std::set<uint32_t> values;
+        for (int i = 0; i < 100; ++i) {
+            values.insert(getRandomEngine()());
+        }
+        return values;
+    });
+    EXPECT_GT(uniqueValues.size(), 90u);
+}
+
+TEST_F(RandomTest, RandomBelow_WorksOnNewThread)
+{
+    // 942 is not a power of two, so a zero draw is rejected and redrawn (the original hang)
+    const std::vector<uint64_t> values = runOnNewThread([] {
+        std::vector<uint64_t> draws;
+        for (int i = 0; i < sampleSize; ++i) {
+            draws.push_back(randomBelow(942));
+        }
+        return draws;
+    });
+    std::set<uint64_t> uniqueValues(values.begin(), values.end());
+    for (uint64_t value : values) {
+        EXPECT_LT(value, 942u);
+    }
+    EXPECT_GT(uniqueValues.size(), static_cast<size_t>(minUniqueExpected));
+}
+
+TEST_F(RandomTest, GetRandomEngine_EachThreadHasItsOwnEngine)
+{
+    // Both threads stay alive until both have reported, so neither engine can be freed and its memory reused
+    std::promise<const std::mt19937*> firstEngine;
+    std::promise<const std::mt19937*> secondEngine;
+    std::promise<void> release;
+    std::shared_future<void> released = release.get_future().share();
+
+    std::thread first([&] { firstEngine.set_value(&getRandomEngine()); released.wait(); });
+    std::thread second([&] { secondEngine.set_value(&getRandomEngine()); released.wait(); });
+    const std::mt19937* firstAddress = firstEngine.get_future().get();
+    const std::mt19937* secondAddress = secondEngine.get_future().get();
+    const std::mt19937* mainAddress = &getRandomEngine();
+    release.set_value();
+    first.join();
+    second.join();
+
+    EXPECT_NE(firstAddress, secondAddress);
+    EXPECT_NE(firstAddress, mainAddress);
+    EXPECT_NE(secondAddress, mainAddress);
+}
+
+TEST_F(RandomTest, Reproducible_SetSeedOnNewThread)
+{
+    // A seeded thread reproduces the same sequence as the main thread does (see Reproducible_RandomBelow)
+    const std::vector<uint64_t> values = runOnNewThread([] {
+        setSeed(42);
+        std::vector<uint64_t> draws;
+        for (int i = 0; i < 8; ++i) {
+            draws.push_back(randomBelow(100));
+        }
+        return draws;
+    });
+    EXPECT_EQ(values, (std::vector<uint64_t>{37, 79, 95, 18, 73, 77, 59, 59}));
+}
+
+TEST_F(RandomTest, Reproducible_OtherThreadsDoNotDisturbSeededSequence)
+{
+    setSeed(42);
+    EXPECT_EQ(randomBelow(100), 37u);
+    EXPECT_EQ(randomBelow(100), 79u);
+
+    runOnNewThread([] {
+        setSeed(7);
+        for (int i = 0; i < 1000; ++i) {
+            randomBelow(100);
+        }
+        return 0;
+    });
+
+    const std::vector<uint64_t> expectedRest = {95, 18, 73, 77, 59, 59};
+    for (uint64_t value : expectedRest) {
+        EXPECT_EQ(randomBelow(100), value);
+    }
 }
