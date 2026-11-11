@@ -106,3 +106,49 @@ TEST_F(RoundingTest, Round_LargePrecision)
 {
     EXPECT_TRUE(floatsEqual(round(3.14159f, 5), 3.14159f));
 }
+
+// Tests for roundToInt
+TEST_F(RoundingTest, RoundToInt_NearestByDefault)
+{
+    EXPECT_EQ(roundToInt(3.4f), 3);
+    EXPECT_EQ(roundToInt(3.6f), 4);
+    EXPECT_EQ(roundToInt(-3.4f), -3);
+    EXPECT_EQ(roundToInt(-3.6f), -4);
+    EXPECT_EQ(roundToInt(7.0f), 7);
+}
+
+TEST_F(RoundingTest, RoundToInt_NearestHalfwayAwayFromZero)
+{
+    EXPECT_EQ(roundToInt(2.5f), 3);
+    EXPECT_EQ(roundToInt(-2.5f), -3);
+    EXPECT_EQ(roundToInt(0.5f), 1);
+}
+
+TEST_F(RoundingTest, RoundToInt_NearestRecoversWholeNumbersStoredJustBelow)
+{
+    // Dividing first stores 53/100 as 0.52999997f, so the percentage lands just below 53 -- a cast gives 52
+    const float percent = (static_cast<float>(53) / 100) * 100.0f;
+    EXPECT_LT(percent, 53.0f);
+    EXPECT_EQ(static_cast<int>(percent), 52);
+    EXPECT_EQ(roundToInt(percent), 53);
+
+    // Every hit count out of 100 comes back as itself
+    for (int hits = 0; hits <= 100; ++hits)
+    {
+        EXPECT_EQ(roundToInt((static_cast<float>(hits) / 100) * 100.0f), hits) << "hits = " << hits;
+    }
+}
+
+TEST_F(RoundingTest, RoundToInt_Up)
+{
+    EXPECT_EQ(roundToInt(2.1f, RoundingMode::Up), 3);
+    EXPECT_EQ(roundToInt(2.0f, RoundingMode::Up), 2);
+    EXPECT_EQ(roundToInt(-2.9f, RoundingMode::Up), -2);
+}
+
+TEST_F(RoundingTest, RoundToInt_Down)
+{
+    EXPECT_EQ(roundToInt(2.9f, RoundingMode::Down), 2);
+    EXPECT_EQ(roundToInt(2.0f, RoundingMode::Down), 2);
+    EXPECT_EQ(roundToInt(-2.1f, RoundingMode::Down), -3);
+}

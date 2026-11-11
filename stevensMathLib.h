@@ -146,6 +146,43 @@ namespace stevensMathLib
         return std::round(value * scaleFactor) / scaleFactor;
     }
 
+    /**
+     * @brief Which way roundToInt() rounds a value that isn't a whole number
+     */
+    enum class RoundingMode
+    {
+        Nearest, ///< To the nearest whole number; halfway cases away from zero (2.5 -> 3, -2.5 -> -3)
+        Up,      ///< Toward positive infinity (2.1 -> 3, -2.9 -> -2)
+        Down     ///< Toward negative infinity (2.9 -> 2, -2.1 -> -3)
+    };
+
+    /**
+     * @brief Rounds a number to a whole number, returned as an int
+     *
+     * @param value The value to round
+     * @param mode Which way to round (default: to the nearest whole number)
+     * @return The rounded value
+     *
+     * @note Prefer this to casting: static_cast<int>() truncates toward zero, so a float that should be
+     *       whole but is stored just below it (e.g. 100.0f * 53 / 100 = 52.9999962f) loses a whole unit.
+     *       The result must fit in an int.
+     *
+     * Example: roundToInt(52.9999962f) returns 53; roundToInt(2.1f, RoundingMode::Up) returns 3
+     */
+    inline int roundToInt(float value, RoundingMode mode = RoundingMode::Nearest)
+    {
+        switch (mode)
+        {
+            case RoundingMode::Up:
+                return static_cast<int>(std::ceil(value));
+            case RoundingMode::Down:
+                return static_cast<int>(std::floor(value));
+            case RoundingMode::Nearest:
+            default:
+                return static_cast<int>(std::lround(value));
+        }
+    }
+
     /*
      * Portable random ranges
      *
